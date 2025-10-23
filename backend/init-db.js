@@ -11,6 +11,7 @@ async function initDatabase() {
         nome VARCHAR(255) NOT NULL,
         email VARCHAR(255) UNIQUE NOT NULL,
         senha VARCHAR(255) NOT NULL,
+        photo_url TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
@@ -24,6 +25,14 @@ async function initDatabase() {
     `);
 
     console.log('✅ Índice no email criado!');
+
+    // Garantir coluna photo_url para bases já existentes
+    await pool.query(`
+      ALTER TABLE users
+      ADD COLUMN IF NOT EXISTS photo_url TEXT;
+    `);
+
+    console.log('✅ Coluna "photo_url" verificada (criada se não existia)!');
 
     // Criar tabela de favoritos do usuário
     await pool.query(`

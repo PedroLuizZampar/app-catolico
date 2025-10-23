@@ -1,10 +1,20 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// URL da API - ALTERE PARA O SEU IP LOCAL OU URL DO SERVIDOR
-// Para dispositivo físico ou emulador Android, use seu IP local
-// Android Emulator: 'http://10.0.2.2:3001/api'
-// Dispositivo físico: 'http://SEU_IP:3001/api'
-const API_URL = 'http://172.20.2.29:3001/api';
+// URL da API (resiliente ao prefixo /api)
+// Preferimos usar variável de ambiente pública do Expo (EXPO_PUBLIC_API_URL)
+// e caímos para um valor local (ajuste conforme necessário) apenas em desenvolvimento.
+// Exemplos de EXPO_PUBLIC_API_URL aceitos:
+// - https://seu-backend.onrender.com (sem /api)  -> vira https://seu-backend.onrender.com/api
+// - https://seu-backend.onrender.com/api (com /api)
+// - http://10.0.2.2:3001 (sem /api)              -> vira http://10.0.2.2:3001/api
+// - http://10.0.2.2:3001/api (com /api)
+const RAW_API_BASE = (process.env.EXPO_PUBLIC_API_URL || '').replace(/\s/g, '');
+let NORMALIZED_BASE = RAW_API_BASE.replace(/\/+$/, ''); // remove barras finais
+if (NORMALIZED_BASE && !/\/api$/i.test(NORMALIZED_BASE)) {
+  NORMALIZED_BASE = `${NORMALIZED_BASE}/api`;
+}
+const API_URL = NORMALIZED_BASE || 'http://172.20.2.29:3001/api';
+// if (__DEV__) console.log('[API] Base URL:', API_URL);
 
 // Tipos
 export interface User {

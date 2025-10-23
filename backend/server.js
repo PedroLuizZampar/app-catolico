@@ -5,6 +5,7 @@ require('dotenv').config();
 const authRoutes = require('./routes/auth');
 const favoritesRoutes = require('./routes/favorites');
 const uploadRoutes = require('./routes/upload');
+const pool = require('./config/database');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -53,11 +54,26 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Iniciar servidor
-app.listen(PORT, () => {
-  console.log(`\n🚀 Servidor rodando na porta ${PORT}`);
-  console.log(`📍 http://localhost:${PORT}`);
-  console.log(`🔐 Auth: http://localhost:${PORT}/api/auth`);
-  console.log(`⭐ Favorites: http://localhost:${PORT}/api/favorites`);
-  console.log(`📸 Upload: http://localhost:${PORT}/api/upload\n`);
+// Garantir schema mínimo (idempotente)
+async function ensureSchema() {
+  try {
+    await pool.query(`
+      ALTER TABLE users
+      ADD COLUMN IF NOT EXISTS photo_url TEXT;
+    `);
+    console.log('✅ Schema verificado: coluna "photo_url" presente em users');
+  } catch (err) {
+    console.error('⚠️  Não foi possível garantir o schema (photo_url):', err.message);
+  }
+}
+
+// Iniciar servidor após garantir schema
+ensureSchema().finally(() => {
+  app.listen(PORT, () => {
+    console.log(`\n🚀 Servidor rodando na porta ${PORT}`);
+    console.log(`📍 http://localhost:${PORT}`);
+    console.log(`🔐 Auth: http://localhost:${PORT}/api/auth`);
+    console.log(`⭐ Favorites: http://localhost:${PORT}/api/favorites`);
+    console.log(`📸 Upload: http://localhost:${PORT}/api/upload\n`);
+  });
 });

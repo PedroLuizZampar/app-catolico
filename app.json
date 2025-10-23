@@ -4,7 +4,8 @@
     "slug": "app-catolico",
     "version": "1.0.0",
     "orientation": "portrait",
-    "userInterfaceStyle": "automatic",
+    
+    "userInterfaceStyle": "light",
     "scheme": "appcatolico",
     "splash": {
       "resizeMode": "contain",
@@ -15,28 +16,32 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.appcatolico"
+      "bundleIdentifier": "com.pedroluizzampar.appcatolico"
     },
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#1a1a2e"
       },
-      "package": "com.appcatolico"
+      "package": "com.pedroluizzampar.appcatolico",
+      "permissions": [],
+      "versionCode": 1
     },
     "web": {
       "bundler": "metro"
     },
     "plugins": [
-      "expo-router",
-      [
-        "expo-splash-screen",
-        {
-          "backgroundColor": "#1a1a2e"
-        }
-      ]
+      "expo-router"
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {
+        "origin": false
+      },
+      "eas": {
+        "projectId": "e852ca44-be82-4f30-b101-e9f15a5754eb"
+      }
     }
   }
 }
