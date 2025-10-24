@@ -53,7 +53,7 @@ export default function ConfiguracoesScreen() {
         style={styles.scrollView}
         contentContainerStyle={[
           styles.scrollContent,
-          { paddingBottom: spacing.xxl + insets.bottom }
+          { paddingBottom: spacing.sm + insets.bottom }
         ]}
         showsVerticalScrollIndicator={false}
       >
@@ -262,7 +262,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: spacing.lg,
-    paddingBottom: spacing.xxl,
+    paddingBottom: spacing.xl,
   },
   header: {
     marginBottom: spacing.xl,
@@ -326,7 +326,7 @@ const styles = StyleSheet.create({
   },
   footer: {
     alignItems: 'center',
-    paddingVertical: spacing.xl,
+    marginTop: spacing.lg,
   },
   footerText: {
     ...typography.small,

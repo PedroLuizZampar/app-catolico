@@ -12,18 +12,40 @@ import { useFavoritesSync } from '@/lib/hooks/useFavoritesSync';
 type FilterType = 'todos' | 'biblia' | 'livro';
 type SortType = 'recente' | 'antigo' | 'livro' | 'capitulo';
 
+// Tipo estendido para grupos
+type FavoriteWithGroup = FavoriteParagraph & {
+  isGroup?: boolean;
+  groupItems?: FavoriteParagraph[];
+};
+
 export default function FavoritesScreen() {
   const router = useRouter();
   const { isDark } = useTheme();
   const colors = getColors(isDark);
   const insets = useSafeAreaInsets();
-  const { favorites, loading, removeFavorite: removeFromSync, clearAll } = useFavoritesSync();
+  const { favorites, loading, removeFavorite: removeFromSync, clearAll, cleanDuplicates } = useFavoritesSync();
 
   const [filterType, setFilterType] = useState<FilterType>('todos');
   const [sortType, setSortType] = useState<SortType>('recente');
 
-  // Filtrar e ordenar favoritos
-  const processedFavorites = useMemo(() => {
+  // Limpar duplicatas ao carregar
+  React.useEffect(() => {
+    const checkAndCleanDuplicates = async () => {
+      try {
+        const removed = await cleanDuplicates();
+        if (removed > 0) {
+          console.log(`✅ ${removed} duplicata(s) removida(s) automaticamente`);
+        }
+      } catch (error) {
+        console.error('Erro ao limpar duplicatas:', error);
+      }
+    };
+    
+    checkAndCleanDuplicates();
+  }, []);
+
+  // Filtrar, agrupar e ordenar favoritos
+  const processedFavorites: FavoriteWithGroup[] = useMemo(() => {
     let filtered = [...favorites];
 
     // Aplicar filtro por tipo
@@ -54,13 +76,49 @@ export default function FavoritesScreen() {
         break;
     }
 
+    // Agrupar favoritos com groupId
+    const grouped: FavoriteWithGroup[] = [];
+    const processedGroupIds = new Set<string>();
+
+    for (const fav of filtered) {
+      if (fav.groupId && !processedGroupIds.has(fav.groupId)) {
+        // Encontrar todos os itens do grupo
+        const groupItems = filtered.filter(f => f.groupId === fav.groupId);
+        
+        if (groupItems.length > 1) {
+          // Criar um representante do grupo
+          const groupRep = {
+            ...groupItems[0],
+            isGroup: true,
+            groupItems,
+          };
+          grouped.push(groupRep);
+          processedGroupIds.add(fav.groupId);
+        } else {
+          // Apenas um item, adicionar normalmente
+          grouped.push(fav);
+        }
+      } else if (!fav.groupId) {
+        // Favorito individual
+        grouped.push(fav);
+      }
+    }
+
+    return grouped;
+
     return filtered;
   }, [favorites, filterType, sortType]);
 
-  const handleRemoveFavorite = async (favorite: FavoriteParagraph) => {
+  const handleRemoveFavorite = async (favorite: FavoriteWithGroup) => {
+    const isGroup = favorite.isGroup && favorite.groupItems && favorite.groupItems.length > 1;
+    const count = isGroup ? favorite.groupItems!.length : 1;
+    const message = isGroup 
+      ? `Deseja remover ${count} ${favorite.type === 'biblia' ? 'versículos' : 'parágrafos'} deste grupo dos favoritos?`
+      : 'Deseja remover este parágrafo dos favoritos?';
+    
     Alert.alert(
       'Remover favorito',
-      'Deseja remover este parágrafo dos favoritos?',
+      message,
       [
         { text: 'Cancelar', style: 'cancel' },
         {
@@ -68,7 +126,15 @@ export default function FavoritesScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              await removeFromSync(favorite);
+              if (isGroup) {
+                // Remover todos os itens do grupo
+                for (const item of favorite.groupItems!) {
+                  await removeFromSync(item);
+                }
+              } else {
+                // Remover favorito único
+                await removeFromSync(favorite);
+              }
             } catch (error) {
               console.error('Erro ao remover favorito:', error);
               Alert.alert('Erro', 'Não foi possível remover o favorito');
@@ -284,7 +350,7 @@ export default function FavoritesScreen() {
             style={styles.scrollView}
             contentContainerStyle={[
               styles.scrollContent,
-              { paddingBottom: spacing.xl + insets.bottom }
+              { paddingBottom: spacing.sm + insets.bottom }
             ]}
             showsVerticalScrollIndicator={false}
           >
@@ -299,11 +365,23 @@ export default function FavoritesScreen() {
                     const path = favorite.type === 'biblia' 
                       ? `/biblia/${favorite.bookSlug}/capitulo/${favorite.chapterId}`
                       : `/livro/${favorite.bookSlug}/capitulo/${favorite.chapterId}`;
-                    router.push(path as any);
+                    
+                    // Passar o número do parágrafo/versículo para scroll
+                    router.push({
+                      pathname: path as any,
+                      params: { paragraph: favorite.paragraphNumber.toString() }
+                    });
                   }}
                 >
                   <View style={styles.favoriteHeader}>
-                    <Text style={[styles.bookTitle, { color: colors.text }]}>{ favorite.bookTitle}</Text>
+                    <View style={styles.favoriteHeaderInfo}>
+                      <Text style={[styles.bookTitle, { color: colors.text }]} numberOfLines={1}>
+                        {favorite.bookTitle || 'Livro desconhecido'}
+                      </Text>
+                      <Text style={[styles.chapterInfo, { color: colors.textMuted }]} numberOfLines={1}>
+                        {favorite.chapterName ? `Cap. ${favorite.chapterId}: ${favorite.chapterName}` : `Capítulo ${favorite.chapterId}`}
+                      </Text>
+                    </View>
                     <Pressable
                       style={styles.deleteButton}
                       onPress={() => handleRemoveFavorite(favorite)}
@@ -313,18 +391,18 @@ export default function FavoritesScreen() {
                     </Pressable>
                   </View>
                   
-                  <Text style={[styles.chapterInfo, { color: colors.textMuted }]}>
-                    Cap. {favorite.chapterId}: {favorite.chapterName}
-                  </Text>
-                  
                   <View style={[styles.paragraphBadge, { backgroundColor: colors.surfaceLight, borderColor: colors.border }]}>
                     <Text style={[styles.paragraphNumber, { color: colors.textSecondary }]}>
-                      #{favorite.paragraphNumber}
+                      {favorite.isGroup && favorite.groupRange
+                        ? `#${favorite.groupRange} (${favorite.groupItems?.length} itens)`
+                        : `#${favorite.paragraphNumber}`}
                     </Text>
                   </View>
                   
-                  <Text style={[styles.paragraphText, { color: colors.textSecondary }]} numberOfLines={4}>
-                    {favorite.paragraphText}
+                  <Text style={[styles.paragraphText, { color: colors.textSecondary }]} numberOfLines={favorite.isGroup ? 2 : 4}>
+                    {favorite.isGroup 
+                      ? `${favorite.groupItems?.length} ${favorite.type === 'biblia' ? 'versículos' : 'parágrafos'} selecionados juntos`
+                      : favorite.paragraphText}
                   </Text>
                   
                   <Text style={[styles.timestamp, { color: colors.textMuted }]}>
@@ -400,6 +478,10 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     marginBottom: spacing.xs,
     gap: spacing.sm,
+  },
+  favoriteHeaderInfo: {
+    flex: 1,
+    gap: spacing.xs,
   },
   bookTitle: {
     ...typography.body,

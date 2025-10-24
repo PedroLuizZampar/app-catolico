@@ -97,6 +97,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: spacing.lg,
+    paddingBottom: spacing.xl,
   },
   header: {
     alignItems: 'center',

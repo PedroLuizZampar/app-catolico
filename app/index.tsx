@@ -21,7 +21,7 @@ export default function HomeScreen() {
         style={styles.scrollView}
         contentContainerStyle={[
           styles.scrollContent,
-          { paddingBottom: spacing.xl + insets.bottom }
+          { paddingBottom: spacing.sm + insets.bottom }
         ]}
         showsVerticalScrollIndicator={false}
       >
@@ -193,7 +193,7 @@ const styles = StyleSheet.create({
   },
   footer: {
     alignItems: 'center',
-    paddingVertical: spacing.xl,
+    paddingVertical: spacing.md,
     paddingTop: spacing.lg,
     borderTopWidth: 1,
   },

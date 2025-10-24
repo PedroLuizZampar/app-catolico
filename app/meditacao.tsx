@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -13,13 +13,15 @@ import {
 import Animated, { FadeInDown, FadeIn } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 import { useTheme } from '@/lib/theme/ThemeContext';
 import { getColors, spacing, borderRadius, typography, shadows } from '@/lib/theme/tokens';
-import { BookData } from '@/lib/types';
+import { BookData, FavoriteParagraph } from '@/lib/types';
 import { BOOKS } from '@/lib/data';
 import { captureRef } from 'react-native-view-shot';
 import * as Sharing from 'expo-sharing';
 import { MeditationShareCard } from '@/components/MeditationShareCard';
+import { useFavoritesSync } from '@/lib/hooks/useFavoritesSync';
 
 // Função para pegar um parágrafo aleatório de qualquer livro
 const getRandomParagraph = () => {
@@ -37,6 +39,7 @@ const getRandomParagraph = () => {
     chapterNumber: randomChapter.chapter,
     chapterName: randomChapter.name,
     bookTitle: randomBook.title,
+    bookSlug: randomBook.slug,
     bookIcon: randomBook.icon,
     bookColor: randomBook.color,
     bookAuthor: randomBook.author,
@@ -44,6 +47,7 @@ const getRandomParagraph = () => {
 };
 
 export default function MeditacaoScreen() {
+  const router = useRouter();
   const { isDark } = useTheme();
   const colors = getColors(isDark);
   const insets = useSafeAreaInsets();
@@ -52,6 +56,18 @@ export default function MeditacaoScreen() {
   const [refreshCount, setRefreshCount] = useState(0);
   const [isSharing, setIsSharing] = useState(false);
   const shareCardRef = useRef<View>(null);
+  
+  // Hooks de favoritos
+  const { favorites, addFavorite, removeFavorite } = useFavoritesSync();
+  
+  // Verificar se a meditação atual é favorita
+  const isFavorited = useMemo(() => {
+    return favorites.some(
+      fav => fav.bookSlug === meditation.bookSlug &&
+             fav.chapterId === meditation.chapterNumber &&
+             fav.paragraphNumber === meditation.number
+    );
+  }, [favorites, meditation]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
@@ -94,12 +110,53 @@ export default function MeditacaoScreen() {
     }
   }, []);
 
+  const handleToggleFavorite = useCallback(async () => {
+    try {
+      if (isFavorited) {
+        // Remover favorito
+        const toRemove = favorites.find(
+          fav => fav.bookSlug === meditation.bookSlug &&
+                 fav.chapterId === meditation.chapterNumber &&
+                 fav.paragraphNumber === meditation.number
+        );
+        if (toRemove) {
+          await removeFavorite(toRemove);
+          Alert.alert('Removido', 'Meditação removida dos favoritos');
+        }
+      } else {
+        // Adicionar favorito
+        const newFavorite: FavoriteParagraph = {
+          bookSlug: meditation.bookSlug,
+          bookTitle: meditation.bookTitle,
+          chapterId: meditation.chapterNumber,
+          chapterName: meditation.chapterName,
+          paragraphNumber: meditation.number,
+          paragraphText: meditation.text,
+          timestamp: Date.now(),
+          type: 'livro',
+        };
+        await addFavorite(newFavorite);
+        Alert.alert('Salvo!', 'Meditação adicionada aos favoritos');
+      }
+    } catch (error) {
+      console.error('Erro ao favoritar:', error);
+      Alert.alert('Erro', 'Não foi possível salvar o favorito');
+    }
+  }, [isFavorited, meditation, favorites]);
+
+  const handleOpenInBook = useCallback(() => {
+    router.push({
+      pathname: `/livro/${meditation.bookSlug}/capitulo/${meditation.chapterNumber}`,
+      params: { paragraph: meditation.number.toString() }
+    } as any);
+  }, [meditation, router]);
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <ScrollView
         contentContainerStyle={[
           styles.scrollContent,
-          { paddingBottom: spacing.xl + insets.bottom }
+          { paddingBottom: spacing.sm + insets.bottom }
         ]}
         showsVerticalScrollIndicator={false}
         refreshControl={
@@ -130,86 +187,106 @@ export default function MeditacaoScreen() {
         <Animated.View
           key={refreshCount} // Força re-animação ao atualizar
           entering={FadeIn.duration(600)}
-          style={[
-            styles.meditationCard,
-            shadows.lg,
-            { backgroundColor: colors.surface, borderColor: colors.border }
-          ]}
         >
-          {/* Header do Card */}
-          <View style={styles.cardHeader}>
-            <View style={[styles.iconContainer, { backgroundColor: colors.surfaceLight }]}>
-              <Text style={styles.bookIcon}>{meditation.bookIcon}</Text>
+          <Pressable
+            onPress={handleOpenInBook}
+            style={[
+              styles.meditationCard,
+              shadows.lg,
+              { backgroundColor: colors.surface, borderColor: colors.border }
+            ]}
+          >
+            {/* Header do Card com Botão Favoritar */}
+            <View style={styles.cardHeader}>
+              <View style={[styles.iconContainer, { backgroundColor: colors.surfaceLight }]}>
+                <Text style={styles.bookIcon}>{meditation.bookIcon}</Text>
+              </View>
+              <View style={styles.headerInfo}>
+                <Text style={[styles.bookTitle, { color: colors.text }]}>
+                  {meditation.bookTitle}
+                </Text>
+                <Text style={[styles.bookAuthor, { color: colors.textSecondary }]}>
+                  {meditation.bookAuthor}
+                </Text>
+              </View>
+              
+              {/* Botão Favoritar no canto superior direito */}
+              <Pressable
+                onPress={handleToggleFavorite}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                style={styles.favoriteButton}
+              >
+                <Ionicons 
+                  name={isFavorited ? "heart" : "heart-outline"} 
+                  size={24} 
+                  color={isFavorited ? colors.error : colors.textMuted}
+                />
+              </Pressable>
             </View>
-            <View style={styles.headerInfo}>
-              <Text style={[styles.bookTitle, { color: colors.text }]}>
-                {meditation.bookTitle}
-              </Text>
-              <Text style={[styles.bookAuthor, { color: colors.textSecondary }]}>
-                {meditation.bookAuthor}
-              </Text>
-            </View>
-          </View>
 
-          {/* Referência */}
-          <View style={[styles.referenceContainer, { borderColor: colors.divider }]}>
-            <Text style={[styles.chapterText, { color: colors.primary }]}>
-              Capítulo {meditation.chapterNumber}
+            {/* Referência */}
+            <View style={[styles.referenceContainer, { borderColor: colors.divider }]}>
+              <Text style={[styles.chapterText, { color: colors.primary }]}>
+                Capítulo {meditation.chapterNumber}
+              </Text>
+              <Text style={[styles.chapterName, { color: colors.textMuted }]}>
+                {meditation.chapterName}
+              </Text>
+              <View style={[styles.paragraphBadge, { backgroundColor: colors.primary }]}>
+                <Text style={styles.paragraphNumber}>
+                  #{meditation.number}
+                </Text>
+              </View>
+            </View>
+
+            {/* Texto da Meditação */}
+            <Text style={[styles.meditationText, { color: colors.text }]}>
+              {meditation.text}
             </Text>
-            <Text style={[styles.chapterName, { color: colors.textMuted }]}>
-              {meditation.chapterName}
+
+            {/* Decoração inferior */}
+            <View style={[styles.decorationBar, { backgroundColor: colors.divider }]} />
+            
+            {/* Footer com data */}
+            <Text style={[styles.footerText, { color: colors.textMuted }]}>
+              {new Date().toLocaleDateString('pt-BR', { 
+                weekday: 'long', 
+                year: 'numeric', 
+                month: 'long', 
+                day: 'numeric' 
+              })}
             </Text>
-            <View style={[styles.paragraphBadge, { backgroundColor: colors.primary }]}>
-              <Text style={styles.paragraphNumber}>
-                #{meditation.number}
-              </Text>
-            </View>
-          </View>
-
-          {/* Texto da Meditação */}
-          <Text style={[styles.meditationText, { color: colors.text }]}>
-            {meditation.text}
-          </Text>
-
-          {/* Decoração inferior */}
-          <View style={[styles.decorationBar, { backgroundColor: colors.divider }]} />
-          
-          {/* Footer com data */}
-          <Text style={[styles.footerText, { color: colors.textMuted }]}>
-            {new Date().toLocaleDateString('pt-BR', { 
-              weekday: 'long', 
-              year: 'numeric', 
-              month: 'long', 
-              day: 'numeric' 
-            })}
-          </Text>
+          </Pressable>
         </Animated.View>
 
-        {/* Botão de Compartilhar */}
+        {/* Botão Compartilhar */}
         <Animated.View
           entering={FadeInDown.duration(500).delay(200)}
           style={styles.actionContainer}
         >
+          {/* Botão Compartilhar */}
           <Pressable
             onPress={handleShare}
             disabled={isSharing}
             style={({ pressed }) => [
-              styles.shareButton,
+              styles.actionButton,
               { 
-                backgroundColor: pressed ? '#8B5A3C' : colors.primary,
+                backgroundColor: colors.surface,
+                borderColor: colors.border,
+                borderWidth: 1,
                 opacity: pressed || isSharing ? 0.8 : 1,
               }
             ]}
           >
             {isSharing ? (
               <>
-                <ActivityIndicator color="#fff" size="small" />
-                <Text style={styles.shareButtonText}>Preparando...</Text>
+                <ActivityIndicator color={colors.primary} size="small" />
+                <Text style={[styles.actionButtonText, { color: colors.primary }]}>Preparando...</Text>
               </>
             ) : (
               <>
-                <Ionicons name="share-social-outline" size={24} color="#fff" />
-                <Text style={styles.shareButtonText}>Compartilhar Meditação</Text>
+                <Ionicons name="share-social-outline" size={20} color={colors.primary} />
+                <Text style={[styles.actionButtonText, { color: colors.primary }]}>Compartilhar</Text>
               </>
             )}
           </Pressable>
@@ -303,6 +380,9 @@ const styles = StyleSheet.create({
     ...typography.small,
     marginTop: spacing.xs,
   },
+  favoriteButton: {
+    padding: spacing.sm,
+  },
   referenceContainer: {
     paddingBottom: spacing.md,
     marginBottom: spacing.lg,
@@ -350,7 +430,19 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
   },
   actionContainer: {
-    gap: spacing.lg,
+    gap: spacing.md,
+  },
+  actionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.md,
+    borderRadius: borderRadius.lg,
+    gap: spacing.sm,
+  },
+  actionButtonText: {
+    ...typography.body,
+    fontWeight: '600',
   },
   shareButton: {
     flexDirection: 'row',

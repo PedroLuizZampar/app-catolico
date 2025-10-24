@@ -9,8 +9,8 @@ export function useFavoritesSync() {
   useEffect(() => {
     loadFavorites();
     
-    // Polling para atualizar favoritos
-    const interval = setInterval(loadFavorites, 2000);
+    // Polling para atualizar favoritos - reduzido para 5 segundos
+    const interval = setInterval(loadFavorites, 5000);
     return () => clearInterval(interval);
   }, []);
 
@@ -65,6 +65,17 @@ export function useFavoritesSync() {
     }
   };
 
+  const cleanDuplicates = async () => {
+    try {
+      const removed = await favoritesSyncService.cleanDuplicates();
+      await loadFavorites();
+      return removed;
+    } catch (error) {
+      console.error('Erro ao limpar duplicatas:', error);
+      throw error;
+    }
+  };
+
   const isFavorite = (bookSlug: string, chapterId: number, paragraphNumber: number): boolean => {
     return favorites.some(
       fav => fav.bookSlug === bookSlug && 
@@ -80,6 +91,7 @@ export function useFavoritesSync() {
     removeFavorite,
     clearAll,
     syncFavorites,
+    cleanDuplicates,
     isFavorite,
   };
 }

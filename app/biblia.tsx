@@ -102,7 +102,7 @@ export default function BibliaScreen() {
       style={[styles.container, { backgroundColor: colors.background }]}
       contentContainerStyle={[
         styles.scrollContainer,
-        { paddingBottom: spacing.xl + insets.bottom }
+        { paddingBottom: spacing.sm + insets.bottom }
       ]}
       showsVerticalScrollIndicator={false}
     >

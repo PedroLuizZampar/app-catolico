@@ -2,62 +2,62 @@
 
 // Tema Claro
 export const lightColors = {
-  primary: '#2C3E50',
-  secondary: '#34495E',
-  accent: '#5D6D7E',
+  primary: '#4A7BA7',
+  secondary: '#5A8FC4',
+  accent: '#6BA0D1',
   
-  background: '#F8F9FA',
-  surface: '#FFFFFF',
-  surfaceLight: '#FAFBFC',
-  surfaceHover: '#F1F3F5',
+  background: '#FFFFFF',
+  surface: '#F7F8FA',
+  surfaceLight: '#EFF1F5',
+  surfaceHover: '#E8EAEF',
   
-  text: '#212529',
-  textSecondary: '#6C757D',
-  textMuted: '#ADB5BD',
+  text: '#1A1A1A',
+  textSecondary: '#5A5A5A',
+  textMuted: '#8A8A8A',
   
-  success: '#52C41A',
-  warning: '#FAAD14',
-  error: '#F5222D',
-  info: '#1890FF',
+  success: '#4CAF50',
+  warning: '#FF9800',
+  error: '#F44336',
+  info: '#2196F3',
   
-  border: '#E9ECEF',
-  divider: '#F1F3F5',
+  border: '#D5DCE3',
+  divider: '#EFF1F5',
   
-  overlay: 'rgba(33, 37, 41, 0.5)',
-  overlayLight: 'rgba(33, 37, 41, 0.2)',
+  overlay: 'rgba(26, 26, 26, 0.5)',
+  overlayLight: 'rgba(26, 26, 26, 0.2)',
   
   tabBar: '#FFFFFF',
-  tabBarBorder: '#E9ECEF',
+  tabBarBorder: '#D5DCE3',
 };
 
 // Tema Escuro
 export const darkColors = {
-  primary: '#64B5F6',
-  secondary: '#90CAF9',
-  accent: '#BBDEFB',
+  primary: '#5B9FD1',
+  secondary: '#6BA0D1',
+  accent: '#7BB0E0',
   
-  background: '#121212',
-  surface: '#1E1E1E',
-  surfaceLight: '#2A2A2A',
-  surfaceHover: '#333333',
+  background: '#0F1419',
+  surface: '#1A1F2E',
+  surfaceLight: '#232A3B',
+  surfaceHover: '#2D3547',
   
-  text: '#FFFFFF',
-  textSecondary: '#B0B0B0',
-  textMuted: '#808080',
+  text: '#E5E9F0',
+  textSecondary: '#A0A5B0',
+  textMuted: '#707580',
   
   success: '#66BB6A',
   warning: '#FFA726',
   error: '#EF5350',
   info: '#42A5F5',
   
-  border: '#2A2A2A',
-  divider: '#2A2A2A',
+  border: '#2D3547',
+  divider: '#232A3B',
   
   overlay: 'rgba(0, 0, 0, 0.7)',
   overlayLight: 'rgba(0, 0, 0, 0.4)',
   
-  tabBar: '#1E1E1E',
-  tabBarBorder: '#2A2A2A',
+  tabBar: '#1A1F2E',
+  tabBarBorder: '#2D3547',
 };
 
 // Helper para obter cores do tema atual

@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, ScrollView, StyleSheet, Alert, Pressable, Share, FlatList, Dimensions } from 'react-native';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { View, Text, ScrollView, StyleSheet, Alert, Pressable, Share, FlatList, Dimensions, Animated as RNAnimated } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import Animated, { FadeInDown, Easing } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
@@ -12,18 +12,91 @@ import { useFavoritesSync } from '@/lib/hooks/useFavoritesSync';
 
 const { width } = Dimensions.get('window');
 
+// Componente memoizado para cada parágrafo
+const ParagraphItem = React.memo<{
+  paragraph: { number: number; text: string };
+  selected: boolean;
+  favorito: boolean;
+  colors: any;
+  onPress: () => void;
+  onLongPress: () => void;
+  setRef: (ref: View | null) => void;
+  highlightOpacity?: RNAnimated.Value;
+}>(({
+  paragraph,
+  selected,
+  favorito,
+  colors,
+  onPress,
+  onLongPress,
+  setRef,
+  highlightOpacity,
+}) => {
+  const backgroundOpacity = highlightOpacity || new RNAnimated.Value(selected ? 1 : 0);
+  
+  return (
+    <Pressable
+      onPress={onPress}
+      onLongPress={onLongPress}
+      delayLongPress={300}
+      style={[
+        styles.paragraphContainer,
+        favorito && styles.paragraphFavorite,
+      ]}
+    >
+      {/* Camada de destaque animada */}
+      {selected && (
+        <RNAnimated.View
+          style={[
+            StyleSheet.absoluteFillObject,
+            {
+              backgroundColor: colors.surfaceLight,
+              borderRadius: borderRadius.md,
+              opacity: backgroundOpacity,
+            },
+          ]}
+        />
+      )}
+      <View ref={setRef} style={styles.paragraphContent}>
+        <Text style={[styles.paragraphNumber, { color: colors.primary }]}>
+          {paragraph.number}
+        </Text>
+        <View style={styles.paragraphTextContainer}>
+          <Text style={[styles.paragraphText, { color: colors.text }]}>
+            {paragraph.text}
+          </Text>
+        </View>
+      </View>
+      {favorito && (
+        <Ionicons 
+          name="heart" 
+          size={14} 
+          color={colors.error} 
+          style={styles.favoriteIcon}
+        />
+      )}
+    </Pressable>
+  );
+});
+
+ParagraphItem.displayName = 'ParagraphItem';
+
 export default function ChapterScreen() {
-  const { slug, id } = useLocalSearchParams<{ slug: string; id: string }>();
+  const { slug, id, paragraph } = useLocalSearchParams<{ slug: string; id: string; paragraph?: string }>();
   const router = useRouter();
   const { isDark } = useTheme();
   const colors = getColors(isDark);
   const flatListRef = useRef<FlatList>(null);
+  const scrollViewRef = useRef<ScrollView>(null);
+  const paragraphRefs = useRef<{ [key: number]: View | null }>({});
+  const highlightOpacity = useRef(new RNAnimated.Value(0)).current;
   const { favorites, isFavorite: checkIsFavorite, addFavorite, removeFavorite } = useFavoritesSync();
   
   const [selectedParagraphs, setSelectedParagraphs] = useState<number[]>([]);
   const [showMenu, setShowMenu] = useState(false);
   const [longPressActive, setLongPressActive] = useState(false);
   const [currentChapterIndex, setCurrentChapterIndex] = useState(0);
+  const [layoutReady, setLayoutReady] = useState(false);
 
   const book = getBookBySlug(slug);
 
@@ -51,15 +124,52 @@ export default function ChapterScreen() {
     setLongPressActive(false);
   }, [id]);
 
+  // Scroll até o parágrafo específico quando fornecido
+  useEffect(() => {
+    if (paragraph && scrollViewRef.current && layoutReady) {
+      const paragraphNum = parseInt(paragraph);
+      if (!isNaN(paragraphNum)) {
+        // Seleciona o parágrafo para destaque temporário
+        setSelectedParagraphs([paragraphNum]);
+        
+        // Anima a opacidade do destaque (fade in)
+        highlightOpacity.setValue(1);
+        
+        // Aguarda um momento para garantir que o layout foi calculado
+        const scrollTimer = setTimeout(() => {
+          const paragraphView = paragraphRefs.current[paragraphNum];
+          if (paragraphView && scrollViewRef.current) {
+            paragraphView.measureLayout(
+              scrollViewRef.current as any,
+              (x, y) => {
+                scrollViewRef.current?.scrollTo({ y: Math.max(0, y - 100), animated: true });
+              },
+              () => console.log('Erro ao medir parágrafo')
+            );
+          }
+        }, 300);
+        
+        // Inicia o fade out após 1.5 segundos e remove a seleção ao terminar
+        const highlightTimer = setTimeout(() => {
+          RNAnimated.timing(highlightOpacity, {
+            toValue: 0,
+            duration: 800, // Fade out suave de 800ms
+            useNativeDriver: true,
+          }).start(() => {
+            setSelectedParagraphs([]);
+          });
+        }, 1500);
+        
+        return () => {
+          clearTimeout(scrollTimer);
+          clearTimeout(highlightTimer);
+        };
+      }
+    }
+  }, [paragraph, currentChapterIndex, layoutReady]);
+
   const isFavorite = (paragraphNumber: number) => {
     return checkIsFavorite(slug, parseInt(id), paragraphNumber);
-  };
-
-  const handleChapterChange = (index: number) => {
-    if (index >= 0 && index < chaptersData.length) {
-      const novoCapitulo = chaptersData[index].chapterId;
-      router.push(`/livro/${slug}/capitulo/${novoCapitulo}` as any);
-    }
   };
 
   // Handlers de parágrafo com suporte a seleção múltipla
@@ -119,6 +229,15 @@ export default function ChapterScreen() {
     try {
       let addedCount = 0;
       let removedCount = 0;
+      
+      // Gerar ID de grupo para múltiplas seleções
+      const groupId = selectedParagraphs.length > 1 
+        ? `${slug}-${parseInt(id)}-${Date.now()}` 
+        : undefined;
+      
+      const groupRange = selectedParagraphs.length > 1 
+        ? `${selectedParagraphs[0]}-${selectedParagraphs[selectedParagraphs.length - 1]}`
+        : undefined;
 
       for (const paragraphNum of selectedParagraphs) {
         const paragraph = chapter.paragraphs.find(p => p.number === paragraphNum);
@@ -143,6 +262,8 @@ export default function ChapterScreen() {
             paragraphText: paragraph.text,
             timestamp: Date.now(),
             type: 'livro',
+            groupId,
+            groupRange,
           };
           await addFavorite(newFavorite);
           addedCount++;
@@ -194,10 +315,12 @@ export default function ChapterScreen() {
   // Renderizar cada página de capítulo
   const renderChapter = ({ item }: { item: { chapterId: number; data: Chapter } }) => {
     const chapter = item.data;
+    const isCurrentChapter = item.chapterId === parseInt(id);
     
     return (
       <View style={[styles.pageContainer, { width }]}>
         <ScrollView
+          ref={isCurrentChapter ? scrollViewRef : null}
           style={styles.scrollView}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
@@ -223,48 +346,32 @@ export default function ChapterScreen() {
           <Animated.View
             entering={FadeInDown.duration(500).delay(200).easing(Easing.out(Easing.ease))}
             style={styles.paragraphsContainer}
+            onLayout={() => {
+              if (isCurrentChapter) {
+                setLayoutReady(true);
+              }
+            }}
           >
             {chapter.paragraphs.map((paragraph) => {
               const selected = selectedParagraphs.includes(paragraph.number);
               const favorito = isFavorite(paragraph.number);
 
               return (
-                <Pressable
+                <ParagraphItem
                   key={paragraph.number}
+                  paragraph={paragraph}
+                  selected={selected}
+                  favorito={favorito}
+                  colors={colors}
                   onPress={() => handleParagraphPress(paragraph.number)}
                   onLongPress={() => handleParagraphLongPress(paragraph.number)}
-                  delayLongPress={300}
-                  style={[
-                    styles.paragraphContainer,
-                    selected && { backgroundColor: colors.surfaceLight },
-                    favorito && styles.paragraphFavorite,
-                  ]}
-                >
-                  <View style={styles.paragraphContent}>
-                    <Text style={[styles.paragraphNumber, { color: colors.primary }]}>
-                      {paragraph.number}
-                    </Text>
-                    <Text style={[styles.paragraphText, { color: colors.text }]}>
-                      {paragraph.text}
-                    </Text>
-                    {favorito && (
-                      <Ionicons 
-                        name="heart" 
-                        size={14} 
-                        color={colors.error} 
-                        style={styles.favoriteIcon}
-                      />
-                    )}
-                    {selected && (
-                      <Ionicons 
-                        name="checkmark-circle" 
-                        size={16} 
-                        color={colors.primary} 
-                        style={styles.selectedIcon}
-                      />
-                    )}
-                  </View>
-                </Pressable>
+                  setRef={(ref) => {
+                    if (isCurrentChapter) {
+                      paragraphRefs.current[paragraph.number] = ref;
+                    }
+                  }}
+                  highlightOpacity={highlightOpacity}
+                />
               );
             })}
           </Animated.View>
@@ -350,9 +457,17 @@ export default function ChapterScreen() {
         horizontal
         pagingEnabled
         showsHorizontalScrollIndicator={false}
+        scrollEventThrottle={16}
+        snapToAlignment="center"
+        snapToInterval={width}
+        decelerationRate="fast"
         onMomentumScrollEnd={(event) => {
-          const index = Math.round(event.nativeEvent.contentOffset.x / width);
-          handleChapterChange(index);
+          const contentOffsetX = event.nativeEvent.contentOffset.x;
+          const index = Math.round(contentOffsetX / width);
+          if (index >= 0 && index < chaptersData.length && index !== currentChapterIndex) {
+            const novoCapitulo = chaptersData[index].chapterId;
+            router.push(`/livro/${slug}/capitulo/${novoCapitulo}` as any);
+          }
         }}
         getItemLayout={(data, index) => ({
           length: width,
@@ -391,6 +506,7 @@ const styles = StyleSheet.create({
   scrollContent: {
     padding: spacing.lg,
     paddingTop: 80, // Espaço para o menu fixo
+    paddingBottom: spacing.xl,
   },
   header: {
     alignItems: 'center',
@@ -425,6 +541,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     borderRadius: borderRadius.md,
     marginBottom: 2,
+    position: 'relative',
   },
   paragraphFavorite: {
     borderLeftWidth: 3,
@@ -433,7 +550,10 @@ const styles = StyleSheet.create({
   paragraphContent: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    flexWrap: 'wrap',
+  },
+  paragraphTextContainer: {
+    flex: 1,
+    paddingRight: spacing.lg, // Espaço para o ícone de favorito
   },
   paragraphNumber: {
     fontSize: 12,
@@ -446,15 +566,11 @@ const styles = StyleSheet.create({
     ...typography.body,
     lineHeight: 26,
     fontSize: 16,
-    flex: 1,
   },
   favoriteIcon: {
-    marginLeft: spacing.sm,
-    marginTop: 4,
-  },
-  selectedIcon: {
-    marginLeft: spacing.xs,
-    marginTop: 4,
+    position: 'absolute',
+    top: spacing.sm,
+    right: spacing.sm,
   },
   // Menu fixo no topo
   menuContainerFixed: {

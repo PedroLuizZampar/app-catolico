@@ -1,5 +1,5 @@
-import React, { useRef, useEffect, useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, Pressable, Alert, Share, FlatList, Dimensions } from 'react-native';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
+import { View, Text, ScrollView, StyleSheet, Pressable, Alert, Share, FlatList, Dimensions, Animated as RNAnimated } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import Animated, { FadeInDown, Easing } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
@@ -12,18 +12,91 @@ import { useFavoritesSync } from '@/lib/hooks/useFavoritesSync';
 
 const { width } = Dimensions.get('window');
 
+// Componente memoizado para cada versículo
+const VersiculoItem = React.memo<{
+  versiculo: Versiculo;
+  selected: boolean;
+  favorito: boolean;
+  colors: any;
+  onPress: () => void;
+  onLongPress: () => void;
+  setRef: (ref: View | null) => void;
+  highlightOpacity?: RNAnimated.Value;
+}>(({
+  versiculo,
+  selected,
+  favorito,
+  colors,
+  onPress,
+  onLongPress,
+  setRef,
+  highlightOpacity,
+}) => {
+  const backgroundOpacity = highlightOpacity || new RNAnimated.Value(selected ? 1 : 0);
+  
+  return (
+    <Pressable
+      onPress={onPress}
+      onLongPress={onLongPress}
+      delayLongPress={300}
+      style={[
+        styles.versiculoContainer,
+        favorito && styles.versiculoFavorito,
+      ]}
+    >
+      {/* Camada de destaque animada */}
+      {selected && (
+        <RNAnimated.View
+          style={[
+            StyleSheet.absoluteFillObject,
+            {
+              backgroundColor: colors.surfaceLight,
+              borderRadius: borderRadius.md,
+              opacity: backgroundOpacity,
+            },
+          ]}
+        />
+      )}
+      <View ref={setRef} style={styles.versiculoContent}>
+        <Text style={[styles.versiculoNumber, { color: colors.primary }]}>
+          {versiculo.versiculo}
+        </Text>
+        <View style={styles.versiculoTextContainer}>
+          <Text style={[styles.versiculoTexto, { color: colors.text }]}>
+            {versiculo.texto}
+          </Text>
+        </View>
+      </View>
+      {favorito && (
+        <Ionicons 
+          name="heart" 
+          size={14} 
+          color={colors.error} 
+          style={styles.favoriteIcon}
+        />
+      )}
+    </Pressable>
+  );
+});
+
+VersiculoItem.displayName = 'VersiculoItem';
+
 export default function CapituloBibliaScreen() {
-  const { livro: livroSlug, id } = useLocalSearchParams<{ livro: string; id: string }>();
+  const { livro: livroSlug, id, paragraph } = useLocalSearchParams<{ livro: string; id: string; paragraph?: string }>();
   const router = useRouter();
   const { isDark } = useTheme();
   const colors = getColors(isDark);
   const flatListRef = useRef<FlatList>(null);
+  const scrollViewRef = useRef<ScrollView>(null);
+  const versiculoRefs = useRef<{ [key: number]: View | null }>({});
+  const highlightOpacity = useRef(new RNAnimated.Value(0)).current;
   const { favorites, isFavorite: checkIsFavorite, addFavorite, removeFavorite } = useFavoritesSync();
   
   const [selectedVersiculos, setSelectedVersiculos] = useState<number[]>([]);
   const [showMenu, setShowMenu] = useState(false);
   const [longPressActive, setLongPressActive] = useState(false);
   const [currentChapterIndex, setCurrentChapterIndex] = useState(0);
+  const [layoutReady, setLayoutReady] = useState(false);
 
   const livro = getLivroBiblicoBySlug(livroSlug);
 
@@ -52,19 +125,56 @@ export default function CapituloBibliaScreen() {
     setLongPressActive(false);
   }, [id]);
 
+  // Scroll até o versículo específico quando fornecido
+  useEffect(() => {
+    if (paragraph && scrollViewRef.current && layoutReady) {
+      const versiculoNum = parseInt(paragraph);
+      if (!isNaN(versiculoNum)) {
+        // Seleciona o versículo para destaque temporário
+        setSelectedVersiculos([versiculoNum]);
+        
+        // Anima a opacidade do destaque (fade in)
+        highlightOpacity.setValue(1);
+        
+        // Aguarda um momento para garantir que o layout foi calculado
+        const scrollTimer = setTimeout(() => {
+          const versiculoView = versiculoRefs.current[versiculoNum];
+          if (versiculoView && scrollViewRef.current) {
+            versiculoView.measureLayout(
+              scrollViewRef.current as any,
+              (x, y) => {
+                scrollViewRef.current?.scrollTo({ y: Math.max(0, y - 100), animated: true });
+              },
+              () => console.log('Erro ao medir versículo')
+            );
+          }
+        }, 300);
+        
+        // Inicia o fade out após 1.5 segundos e remove a seleção ao terminar
+        const highlightTimer = setTimeout(() => {
+          RNAnimated.timing(highlightOpacity, {
+            toValue: 0,
+            duration: 800, // Fade out suave de 800ms
+            useNativeDriver: true,
+          }).start(() => {
+            setSelectedVersiculos([]);
+          });
+        }, 1500);
+        
+        return () => {
+          clearTimeout(scrollTimer);
+          clearTimeout(highlightTimer);
+        };
+      }
+    }
+  }, [paragraph, currentChapterIndex, layoutReady]);
+
   const isFavorite = (versiculoNum: number) => {
     return checkIsFavorite(livroSlug, parseInt(id), versiculoNum);
   };
 
   const isSelected = (versiculoNum: number) => {
     return selectedVersiculos.includes(versiculoNum);
-  };
-
-  const handleChapterChange = (index: number) => {
-    if (index >= 0 && index < capitulosData.length) {
-      const novoCapitulo = capitulosData[index].capitulo;
-      router.push(`/biblia/${livroSlug}/capitulo/${novoCapitulo}` as any);
-    }
   };
 
   // Handlers de versículo com suporte a seleção múltipla
@@ -124,6 +234,15 @@ export default function CapituloBibliaScreen() {
     try {
       let addedCount = 0;
       let removedCount = 0;
+      
+      // Gerar ID de grupo para múltiplas seleções
+      const groupId = selectedVersiculos.length > 1 
+        ? `${livroSlug}-${parseInt(id)}-${Date.now()}` 
+        : undefined;
+      
+      const groupRange = selectedVersiculos.length > 1 
+        ? `${selectedVersiculos[0]}-${selectedVersiculos[selectedVersiculos.length - 1]}`
+        : undefined;
 
       for (const versiculoNum of selectedVersiculos) {
         const versiculo = capitulo.versiculos.find((v: Versiculo) => v.versiculo === versiculoNum);
@@ -148,6 +267,8 @@ export default function CapituloBibliaScreen() {
             paragraphText: versiculo.texto,
             timestamp: Date.now(),
             type: 'biblia',
+            groupId,
+            groupRange,
           };
           await addFavorite(newFavorite);
           addedCount++;
@@ -199,10 +320,12 @@ export default function CapituloBibliaScreen() {
   // Renderizar cada página de capítulo
   const renderChapter = ({ item }: { item: { capitulo: number; data: CapituloBiblia } }) => {
     const capitulo = item.data;
+    const isCurrentChapter = item.capitulo === parseInt(id);
     
     return (
       <View style={[styles.pageContainer, { width }]}>
         <ScrollView
+          ref={isCurrentChapter ? scrollViewRef : null}
           style={styles.scrollView}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
@@ -226,6 +349,11 @@ export default function CapituloBibliaScreen() {
           <Animated.View
             entering={FadeInDown.duration(500).delay(200).easing(Easing.out(Easing.ease))}
             style={styles.versiculosContainer}
+            onLayout={() => {
+              if (isCurrentChapter) {
+                setLayoutReady(true);
+              }
+            }}
           >
             {capitulo.versiculos.map((versiculo: Versiculo) => {
               const selected = selectedVersiculos.includes(versiculo.versiculo);
@@ -236,42 +364,21 @@ export default function CapituloBibliaScreen() {
               );
 
               return (
-                <Pressable
+                <VersiculoItem
                   key={versiculo.versiculo}
+                  versiculo={versiculo}
+                  selected={selected}
+                  favorito={favorito}
+                  colors={colors}
                   onPress={() => handleVersiculoPress(versiculo.versiculo)}
                   onLongPress={() => handleVersiculoLongPress(versiculo.versiculo)}
-                  delayLongPress={300}
-                  style={[
-                    styles.versiculoContainer,
-                    selected && { backgroundColor: colors.surfaceLight },
-                    favorito && styles.versiculoFavorito,
-                  ]}
-                >
-                  <View style={styles.versiculoContent}>
-                    <Text style={[styles.versiculoNumber, { color: colors.primary }]}>
-                      {versiculo.versiculo}
-                    </Text>
-                    <Text style={[styles.versiculoTexto, { color: colors.text }]}>
-                      {versiculo.texto}
-                    </Text>
-                    {favorito && (
-                      <Ionicons 
-                        name="heart" 
-                        size={14} 
-                        color={colors.error} 
-                        style={styles.favoriteIcon}
-                      />
-                    )}
-                    {selected && (
-                      <Ionicons 
-                        name="checkmark-circle" 
-                        size={16} 
-                        color={colors.primary} 
-                        style={styles.selectedIcon}
-                      />
-                    )}
-                  </View>
-                </Pressable>
+                  setRef={(ref) => {
+                    if (isCurrentChapter) {
+                      versiculoRefs.current[versiculo.versiculo] = ref;
+                    }
+                  }}
+                  highlightOpacity={highlightOpacity}
+                />
               );
             })}
           </Animated.View>
@@ -357,9 +464,17 @@ export default function CapituloBibliaScreen() {
         horizontal
         pagingEnabled
         showsHorizontalScrollIndicator={false}
+        scrollEventThrottle={16}
+        snapToAlignment="center"
+        snapToInterval={width}
+        decelerationRate="fast"
         onMomentumScrollEnd={(event) => {
-          const index = Math.round(event.nativeEvent.contentOffset.x / width);
-          handleChapterChange(index);
+          const contentOffsetX = event.nativeEvent.contentOffset.x;
+          const index = Math.round(contentOffsetX / width);
+          if (index >= 0 && index < capitulosData.length && index !== currentChapterIndex) {
+            const novoCapitulo = capitulosData[index].capitulo;
+            router.push(`/biblia/${livroSlug}/capitulo/${novoCapitulo}` as any);
+          }
         }}
         getItemLayout={(data, index) => ({
           length: width,
@@ -391,6 +506,7 @@ const styles = StyleSheet.create({
   scrollContent: {
     padding: spacing.lg,
     paddingTop: 80, // Espaço para o menu fixo
+    paddingBottom: spacing.xl,
   },
   errorContainer: {
     flex: 1,
@@ -433,6 +549,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     borderRadius: borderRadius.md,
     marginBottom: 2,
+    position: 'relative',
   },
   versiculoFavorito: {
     borderLeftWidth: 3,
@@ -441,7 +558,10 @@ const styles = StyleSheet.create({
   versiculoContent: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    flexWrap: 'wrap',
+  },
+  versiculoTextContainer: {
+    flex: 1,
+    paddingRight: spacing.lg, // Espaço para o ícone de favorito
   },
   versiculoNumber: {
     fontSize: 12,
@@ -454,15 +574,11 @@ const styles = StyleSheet.create({
     ...typography.body,
     lineHeight: 26,
     fontSize: 16,
-    flex: 1,
   },
   favoriteIcon: {
-    marginLeft: spacing.sm,
-    marginTop: 4,
-  },
-  selectedIcon: {
-    marginLeft: spacing.xs,
-    marginTop: 4,
+    position: 'absolute',
+    top: spacing.sm,
+    right: spacing.sm,
   },
   // Menu fixo no topo
   menuContainerFixed: {

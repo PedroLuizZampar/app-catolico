@@ -80,7 +80,10 @@ export default function LivroBibliaScreen() {
               entering={FadeInDown.duration(500)
                 .delay(150 + index * 20)
                 .easing(Easing.out(Easing.ease))}
-              style={styles.capituloWrapper}
+              style={[
+                styles.capituloWrapper,
+                (index + 1) % 4 === 0 && styles.capituloWrapperLast
+              ]}
             >
               <Pressable
                 style={({ pressed }) => [
@@ -118,6 +121,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: spacing.lg,
+    paddingBottom: spacing.xl,
   },
   errorContainer: {
     flex: 1,
@@ -174,17 +178,18 @@ const styles = StyleSheet.create({
   capitulosGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: spacing.sm,
-    marginHorizontal: -spacing.xs / 2,
   },
   capituloWrapper: {
     width: '23.5%',
-    aspectRatio: 1,
-    marginHorizontal: spacing.xs / 2,
-    marginBottom: spacing.xs,
+    marginRight: '2%',
+    marginBottom: spacing.md,
+  },
+  capituloWrapperLast: {
+    marginRight: 0,
   },
   capituloCard: {
-    flex: 1,
+    width: '100%',
+    aspectRatio: 1,
     borderRadius: borderRadius.lg,
     borderWidth: 1,
     justifyContent: 'center',

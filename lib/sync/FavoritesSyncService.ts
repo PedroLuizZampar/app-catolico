@@ -64,11 +64,32 @@ export class FavoritesSyncService {
     try {
       const stored = await AsyncStorage.getItem(FAVORITES_KEY);
       const favorites = stored ? JSON.parse(stored) : [];
-      return await this.migrateFavoritesIfNeeded(favorites);
+      const migrated = await this.migrateFavoritesIfNeeded(favorites);
+      
+      // Remover duplicatas se existirem
+      return this.removeDuplicates(migrated);
     } catch (error) {
       console.error('Erro ao buscar favoritos locais:', error);
       return [];
     }
+  }
+
+  /**
+   * Remover duplicatas do array de favoritos
+   */
+  private removeDuplicates(favorites: FavoriteParagraph[]): FavoriteParagraph[] {
+    const seen = new Map<string, FavoriteParagraph>();
+    
+    for (const fav of favorites) {
+      const key = `${fav.bookSlug}-${fav.chapterId}-${fav.paragraphNumber}`;
+      
+      // Se não existe ou o existente é mais antigo, substituir
+      if (!seen.has(key) || seen.get(key)!.timestamp < fav.timestamp) {
+        seen.set(key, fav);
+      }
+    }
+    
+    return Array.from(seen.values());
   }
 
   /**
@@ -91,17 +112,20 @@ export class FavoritesSyncService {
       // 1. Salvar localmente primeiro (para resposta rápida)
       const favorites = await this.getLocalFavorites();
       
-      // Verificar se já existe
+      // Verificar se já existe (chave única: bookSlug + chapterId + paragraphNumber)
       const exists = favorites.some(
         f => f.bookSlug === favorite.bookSlug && 
              f.chapterId === favorite.chapterId && 
              f.paragraphNumber === favorite.paragraphNumber
       );
 
-      if (!exists) {
-        favorites.push(favorite);
-        await this.saveLocalFavorites(favorites);
+      if (exists) {
+        console.log('Favorito já existe localmente, pulando');
+        return; // Não adicionar duplicata
       }
+
+      favorites.push(favorite);
+      await this.saveLocalFavorites(favorites);
 
       // 2. Tentar sincronizar com nuvem
       try {
@@ -143,12 +167,15 @@ export class FavoritesSyncService {
         const cloudFavorites = await favoritesAPI.getFavorites();
         const cloudFavorite = cloudFavorites.find(
           (f: any) => f.book_slug === favorite.bookSlug && 
-               f.chapter_id === favorite.chapterId && 
+               parseInt(f.chapter_id) === favorite.chapterId && 
                f.paragraph_index === favorite.paragraphNumber
         );
 
         if (cloudFavorite) {
           await favoritesAPI.removeFavorite(cloudFavorite.id);
+          console.log('✅ Favorito removido da nuvem:', cloudFavorite.id);
+        } else {
+          console.warn('⚠️ Favorito não encontrado na nuvem para remover');
         }
       } catch (error) {
         console.warn('Erro ao remover favorito da nuvem:', error);
@@ -212,19 +239,25 @@ export class FavoritesSyncService {
       });
 
       // 3. Mesclar: união de ambos (sem duplicatas)
-      const merged = [...localFavorites];
+      // Criar um Map para garantir unicidade baseada em chave composta
+      const mergedMap = new Map<string, FavoriteParagraph>();
       
+      // Adicionar favoritos locais primeiro
+      for (const localFav of localFavorites) {
+        const key = `${localFav.bookSlug}-${localFav.chapterId}-${localFav.paragraphNumber}`;
+        mergedMap.set(key, localFav);
+      }
+      
+      // Adicionar favoritos da nuvem (não sobrescreve se já existir)
       for (const cloudFav of cloudAsFavorites) {
-        const exists = merged.some(
-          f => f.bookSlug === cloudFav.bookSlug && 
-               f.chapterId === cloudFav.chapterId && 
-               f.paragraphNumber === cloudFav.paragraphNumber
-        );
-        
-        if (!exists) {
-          merged.push(cloudFav);
+        const key = `${cloudFav.bookSlug}-${cloudFav.chapterId}-${cloudFav.paragraphNumber}`;
+        if (!mergedMap.has(key)) {
+          mergedMap.set(key, cloudFav);
         }
       }
+      
+      // Converter Map de volta para array
+      const merged = Array.from(mergedMap.values());
 
       // 4. Enviar favoritos locais que não estão na nuvem
       for (const localFav of localFavorites) {
@@ -270,6 +303,30 @@ export class FavoritesSyncService {
       throw error;
     } finally {
       this.syncInProgress = false;
+    }
+  }
+
+  /**
+   * Limpar duplicatas existentes
+   */
+  async cleanDuplicates(): Promise<number> {
+    try {
+      const stored = await AsyncStorage.getItem(FAVORITES_KEY);
+      const favorites = stored ? JSON.parse(stored) : [];
+      const originalCount = favorites.length;
+      
+      const cleaned = this.removeDuplicates(favorites);
+      const duplicatesRemoved = originalCount - cleaned.length;
+      
+      if (duplicatesRemoved > 0) {
+        await this.saveLocalFavorites(cleaned);
+        console.log(`✅ ${duplicatesRemoved} duplicata(s) removida(s)`);
+      }
+      
+      return duplicatesRemoved;
+    } catch (error) {
+      console.error('Erro ao limpar duplicatas:', error);
+      return 0;
     }
   }
 

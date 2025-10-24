@@ -53,6 +53,8 @@ export interface FavoriteParagraph {
   paragraphText: string;
   timestamp: number;
   type: 'biblia' | 'livro'; // Tipo para categorização
+  groupId?: string; // ID para agrupar múltiplos favoritos salvos juntos
+  groupRange?: string; // Descrição do range (ex: "1-5" para parágrafos 1 a 5)
 }
 
 // Tipos da Bíblia
